@@ -1,0 +1,366 @@
+`timescale 1 ns/ 1 ps
+module colibri_hawk_vlg_tst();
+
+localparam STREAM_CLK = 12.5;	//40MHz
+localparam SLAVE_CLK = 12.5;
+localparam MASTER_CLK = 5;		//100Mhz
+localparam ONEWIRE_CLK = 80;	//12.5MHz
+//localparam PAL_CLK = 38.462; //13MHz
+localparam PAL_CLK = 19.231; //26MHz
+localparam DCI_CLK = 3.367; //148.5MHZ
+
+reg stream_reset 	= 1'b0;
+
+//reg slave_clk = 1'b0;
+//reg master_clk	= 1'b0;
+reg stream_clk = 1'b1;
+//reg onewire_clk = 1'b0;
+reg pal_clk = 1'b1;
+reg dci_clk = 1'b1;
+                         
+always #STREAM_CLK stream_clk <= ~stream_clk;                                              
+//always #SLAVE_CLK slave_clk <= ~slave_clk;                                              
+//always #MASTER_CLK master_clk <= ~master_clk;                                              
+//always #ONEWIRE_CLK onewire_clk <= ~onewire_clk;
+always #PAL_CLK pal_clk <= ~pal_clk;
+always #DCI_CLK dci_clk <= ~dci_clk;
+
+reg flag = 1'b0;
+reg [15:0] n = 16'h0;
+
+//Avalon-ST
+wire test_sof, test_eof, test_valid;
+wire [15:0] test_data;
+/*
+wire temp_sof, temp_eof, temp_valid;
+wire [15:0] temp_data;
+
+wire calib_sof, calib_eof, calib_valid;
+wire [15:0] calib_data;
+*/
+//Avalon-MM
+reg slave_reset, slave_wr, slave_rd;
+reg [3:0] slave_address;
+reg [31:0] slave_wrdata;
+wire [31:0]	slave_rddata;
+/*
+reg master_rdwaitrequest, master_wrwaitrequest;
+wire master_waitrequest;
+reg master_reset, master_readdatavalid;
+reg [31:0] readdata;	
+reg [31:0] master_readdata;		
+wire master_write, master_read;			
+wire [6:0] master_burstcount;
+wire [31:0]	master_writedata;	
+wire [31:0] master_address;
+*/
+
+test_video_generator_640x480_ycbcr test_video_inst(
+	.clk_25_mhz(stream_clk),
+	.enable(1'b1),
+	.video_valid(test_valid),
+	.video_data(test_data),
+	.video_sof(test_sof),
+	.video_eof(test_eof)
+	);
+	 /*
+hawk_videoAddTemp add_temp_inst(	
+	.temp_data(16'hABCD), 
+	.enable(1'b1),
+	.stream_clk(stream_clk),
+	.stream_in_sop(test_sof),
+	.stream_in_valid(test_valid),
+	.stream_in_data(test_data), 
+	.stream_in_eop(test_eof),
+	.stream_out_sop(temp_sof),
+	.stream_out_valid(temp_valid),
+	.stream_out_data(temp_data),
+	.stream_out_eop(temp_eof)
+	);
+
+video_correction #(
+	.video_width(640),
+	.video_height(512),
+	.accum_size(4),
+	.factor_k_addr(32'h1fff),
+	.factor_b_addr(32'h3fff)
+	) video_cor_inst (
+	.avs_clk(stream_clk),
+	.avs_reset(stream_reset),
+	// Avalon-Stream input raw frame
+	.avs_sink_sof(temp_sof),
+	.avs_sink_valid(temp_valid),
+	.avs_sink_data(temp_data),
+	.avs_sink_eof(temp_eof),
+	// Avalon Stream output calib frame
+	.avs_source_sof(calib_sof),
+	.avs_source_valid(calib_valid),
+	.avs_source_data(calib_data),
+	.avs_source_eof(calib_eof),
+	// Avalon-MM Slave (from Nios)
+	.avmm_slv_rst(slave_reset),
+	.avmm_slv_clk(slave_clk),
+	.avmm_slv_wr(slave_wr),
+	.avmm_slv_rd(slave_rd),
+	.avmm_slv_address(slave_address),
+	.avmm_slv_wrdata(slave_wrdata),
+	.avmm_slv_rddata(slave_rddata),
+	// Avalon-MM Master (to LPDDR)
+	.avmm_m_rst(master_reset),							
+	.avmm_m_clk(master_clk),							
+	.avmm_m_address(master_address),				
+	.avmm_m_waitrequest(master_waitrequest),	
+	.avmm_m_burstcount(master_burstcount),		
+	.avmm_m_write(master_write),					
+	.avmm_m_writedata(master_writedata),			
+	.avmm_m_read(master_read),						
+	.avmm_m_readdata(master_readdata),			
+	.avmm_m_readdatavalid(master_readdatavalid)
+	);
+	*/
+	wire pal_ready;
+	wire [7:0] pal_data;
+	wire pal_valid;
+	wire pal_underflow;
+	
+	video_out_controller vid_out_ctrl_inst(
+		.stream_clk (stream_clk),
+		.stream_video_sof (test_sof),
+		.stream_video_valid (test_valid),
+		.stream_video_data (test_data),
+		.stream_video_eof (test_eof),
+		.video_out_enable (1'b1),
+		.stream_ready (pal_ready),
+		.video_clk (pal_clk),	
+		.video_data (pal_data),
+		.video_valid (pal_valid),
+		.video_underflow (vid_out_ctrl_underflow)
+	);	
+	
+	reg global_sync = 1'b0;
+	wire bt_h_sync, bt_v_sync, field;
+	wire [9:0] bt_data;
+	wire bt_trs;
+	
+	//SDI testbench
+	//input TX
+	wire        tx_rst;          
+	wire        tx_pclk;   
+	wire [19:0] tx_datain;       
+	wire        tx_datain_valid; 
+	wire        tx_trs;    
+	//output TX
+	wire [19:0] tx_dataout;      
+	wire        tx_dataout_valid;
+	//input RX
+	wire        rx_clkin;              
+	wire        rx_rst_proto_in;       
+	wire [19:0] rx_datain;             
+	wire        rx_datain_valid;       
+   //output RX
+	wire [19:0] rx_dataout_expand;
+	wire [9:0]	rx_dataout;
+	wire        rx_dataout_valid;      
+	wire        rx_f;                  
+	wire        rx_v;                  
+	wire        rx_h;                  
+	wire        rx_ap;                 
+	wire [3:0]  rx_format;             
+	wire        rx_eav;                
+	wire        rx_trs;                
+	wire        rx_align_locked;       
+	wire        rx_trs_locked;         
+	wire        rx_frame_locked;       
+	wire        rx_clkout;             
+	wire        rx_trs_loose_lock_out;  
+	//clk
+	reg [3:0] valid_cnt = 4'h0;
+	reg [9:0] data_reg = 10'h0;
+	//custom TX
+	wire [9:0] custom_tx_data, custom_rx_data;
+	wire custom_tx_valid, custom_rx_valid;
+	
+	colorbars #(
+		.VID_WIDTH(10)
+	 ) bt656 (
+		.clk(pal_clk),
+		.rst(slave_reset),
+		.ce(global_sync),
+		.q(bt_data),
+		.h_sync(bt_h_sync),
+		.v_sync(bt_v_sync),
+		.field(field),
+		.trs(bt_trs)
+	);
+	
+	always @(posedge dci_clk) begin
+		if (global_sync && bt_h_sync) begin
+			if (valid_cnt == 4'd10)
+				valid_cnt <= 4'h0;
+			else
+				valid_cnt <= valid_cnt + 1;
+			if ((valid_cnt == 4'd4) || (valid_cnt == 4'd9))
+				data_reg <= bt_data;	
+		end
+	end	
+	
+	assign tx_rst	= slave_reset;           
+	assign tx_pclk	= dci_clk;   
+	//assign tx_datain = (tx_datain_valid) ? {2'b00, pal_data, 2'b00, pal_data} : 20'h0;
+	assign tx_datain = {10'h0, data_reg};	
+	assign tx_datain_valid = (valid_cnt == 4'd5) || (valid_cnt == 4'd10) ? 1'b1 : 1'b0; 
+	assign tx_trs = (bt_trs && (tx_datain == 10'h3ff)) ? 1'b1 : 1'b0;    
+
+	assign rx_clkin = dci_clk;              
+	assign rx_rst_proto_in = slave_reset;       
+	assign rx_datain	= tx_dataout;
+	assign rx_datain_valid = tx_dataout_valid;      
+	
+	SDI_TX sdi_tx_inst (
+		.tx_rst           (           tx_rst),
+		.tx_datain        (        tx_datain),
+		.tx_datain_valid  (  tx_datain_valid),
+		.tx_trs           (           tx_trs),
+		.tx_dataout       (       tx_dataout),
+		.tx_dataout_valid ( tx_dataout_valid),
+		.tx_pclk          (          tx_pclk)
+	);
+	
+	custom_sdi_tx custom_tx_inst(
+		.clk(tx_pclk),
+		.reset(tx_rst),
+		.tx_datain(tx_datain[9:0]),
+		.tx_datain_valid(tx_datain_valid),
+		.tx_dataout(custom_tx_data),
+		.tx_dataout_valid(custom_tx_valid)
+	);
+	
+	custom_sdi_tx custom_rx_inst(
+		.clk(tx_pclk),
+		.reset(tx_rst),
+		.tx_datain(custom_tx_data),
+		.tx_datain_valid(custom_tx_valid),
+		.tx_dataout(custom_rx_data),
+		.tx_dataout_valid(custom_rx_valid)
+	);
+	
+	SDI_RX sdi_rx_inst (
+		.rx_dataout            (     rx_dataout_expand),
+		.rx_dataout_valid      (      rx_dataout_valid),
+		.rx_f                  (                  rx_f),
+		.rx_v                  (                  rx_v),
+		.rx_h                  (                  rx_h),
+		.rx_ap                 (                 rx_ap),
+		.rx_format             (             rx_format),
+		.rx_eav                (                rx_eav),
+		.rx_trs                (                rx_trs),
+		.rx_align_locked       (       rx_align_locked),
+		.rx_trs_locked         (         rx_trs_locked),
+		.rx_frame_locked       (       rx_frame_locked),
+		.rx_clkout             (             rx_clkout),
+		.rx_clkin              (              rx_clkin),
+		.rx_rst_proto_in       (       rx_rst_proto_in),
+		.rx_datain             (             rx_datain),
+		.rx_datain_valid       (       rx_datain_valid),
+		.rx_trs_loose_lock_out ( rx_trs_loose_lock_out)
+	);
+
+	assign rx_dataout = rx_dataout_expand[9:0];
+	
+initial                                                
+begin
+	//master_reset = 1'b0;
+	slave_reset = 1'b0;
+	#PAL_CLK;
+	slave_reset = 1'b1;
+	#PAL_CLK;
+	slave_reset = 1'b0;
+	#(10*PAL_CLK);
+	global_sync = 1;
+	//enable 1pt calib
+	//slave_address = 4'h0;
+	//slave_wrdata[1:0] = 2'b01;
+	//#100;
+	//slave_reset = 1'b1;
+	//slave_wr = 1;
+	//#25;
+	//enable 2pt calib
+	//#100;
+	//slave_address = 4'h1;
+	//slave_wr = 1;
+	//#25;
+	//slave_wr = 0;
+
+	
+end    
+
+/*
+//write master vd
+initial begin
+	master_wrwaitrequest = 1'b0; 
+	while (flag == 0)		
+	begin
+		@(posedge master_write);
+		#0.1 master_wrwaitrequest = 1'b1; 
+		#20.1 master_wrwaitrequest = 1'b0; 
+	end
+end	
+
+//read master vd
+initial begin
+	master_rdwaitrequest = 1'b0;
+	while (flag == 0) 
+	begin
+		@(posedge master_read);
+		#0.1 master_rdwaitrequest = 1'b1;
+		#20.1 master_rdwaitrequest = 1'b0;
+	end
+end
+
+assign master_waitrequest = master_wrwaitrequest | master_rdwaitrequest;
+
+initial begin
+	master_readdatavalid = 0;
+	while (flag == 0) 
+	begin
+		@(posedge master_read);
+		#40.1 master_readdatavalid = 1'b1;
+		#640 master_readdatavalid = 1'b0; 
+	end
+end
+	
+initial begin
+		master_readdata = 0;	
+		while (flag == 0) 
+		begin
+			@(posedge master_read);
+			#40.1;
+			n = 0;
+			repeat (64) begin
+				master_readdata = {n + 1, n};
+				#10;
+				n = n + 2;
+			end
+		end
+	end
+
+
+
+wire ds1821_dq;
+wire [15:0] celsium_data;
+wire temp_en;
+
+dallas_ds18b20 #(
+	.OW_TICKS_MS(6250),
+	.OW_SEC_DELAY(1)
+	)
+	onewire_ds1820
+	(
+	.ow_clk(onewire_clk),
+	.ow_reset(1'b0),
+	.ow_bidirec(ds1821dq),
+	.temp_en(temp_en), 
+	.temp_data(celsium_data)
+	);
+*/
+endmodule

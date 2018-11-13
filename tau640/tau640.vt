@@ -1,0 +1,61 @@
+`timescale 1 ns/ 1 ns
+module tau640_vlg_tst();
+
+parameter CLK_T = 13; //27.7MHz
+
+reg clk = 1'b0;
+reg reset = 1'b1;
+reg ce = 1'b0;
+
+wire bt_h_sync, bt_v_sync, yuv_v_sync, yuv_h_ref, field;
+wire [7:0] bt_data;
+wire [9:0] yuv_data;
+
+always #CLK_T clk <= ~clk;
+
+colorbars bt656 (
+    .clk(clk),
+    .rst(reset),
+    .ce(ce),
+    .q(bt_data),
+    .h_sync(bt_h_sync),
+    .v_sync(bt_v_sync),
+    .field(field)
+);
+
+bt640_capture i1 (
+	//X1 (Bt.656 from Tau640)
+	.raw_in_vclk(clk),
+	.raw_in_scl(1'b0),
+	.raw_in_sda(1'b0),
+	.raw_in_data(bt_data),
+	//XS1 (Bt.656 to display)
+	//.raw_out_vclk(),
+	//.raw_out_scl(),
+	//.raw_out_sda(),
+	//.raw_out_data(),
+	//XS2 (YVYU to Banana-pi)
+	.yuv_out_vclk(),
+	.yuv_out_pclk(),
+	.yuv_out_cam_pwdn(),
+	.yuv_out_scl(),
+	.yuv_out_sda(),
+	.yuv_out_vsync(yuv_v_sync),
+	.yuv_out_href(yuv_h_ref),	
+	.yuv_out_data(yuv_data)
+);
+initial                                                
+begin                                                  
+$display("Running testbench");
+reset = 1'b1;
+ce = 1'b0;
+#100;
+reset = 1'b0;
+ce = 1'b1;
+#100000;
+                     
+end
+                                              
+
+endmodule
+

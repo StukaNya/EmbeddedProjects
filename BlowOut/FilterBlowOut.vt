@@ -1,0 +1,205 @@
+
+`timescale 1 ns/ 1 ps
+module blow_out_tb();
+
+localparam frame_sz = 3;
+
+localparam CLK_HAWK = 12.5,		//~40 MHz
+				CLK_FILTER = 10,		//50 MHz
+				CLK_AVALON = 20,	 	//25 MHz
+				CLK_NOISE = 150;		
+				
+localparam DATA_WIDTH = 16,
+			FRAME_WIDTH = 640,
+			FRAME_HEIGHT = 10,//512,
+			THRESHOLD_LOW = 1000,
+			THRESHOLD_HIGH = 2000;
+localparam FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT,
+			FRAME_IDLE = 100;
+
+				
+reg in_hawk_clk_40_MHz, in_clk_25_MHz, in_clk_50_MHz, noise_clk;
+reg blowout_en, average_en, fc_reset;
+reg ResM;
+
+wire sink_valid, sink_eop, sink_sop;
+wire [DATA_WIDTH-1:0] sink_data1, sink_data2, sink_bad_data;
+wire source_valid, source_eop, source_sop;
+wire [DATA_WIDTH-1:0] source_data;
+
+wire CamLinkCLK;
+wire CamLinkCLKd2;
+wire LVAL_Out;
+wire FVAL_Out;
+wire [13:0] HAWK_DATA;
+
+always #CLK_HAWK 
+	in_hawk_clk_40_MHz <= ~in_hawk_clk_40_MHz;
+
+always #CLK_AVALON
+	in_clk_25_MHz <= ~in_clk_25_MHz;
+
+always #CLK_FILTER
+	in_clk_50_MHz <= ~in_clk_50_MHz;
+
+always #CLK_NOISE
+	noise_clk <= ~noise_clk;
+	
+	
+initial                                                
+begin
+$display("Running testbench");  
+in_hawk_clk_40_MHz = 0;
+in_clk_25_MHz = 0;
+in_clk_50_MHz = 1;
+noise_clk = 0;
+blowout_en = 0;
+average_en = 0;
+fc_reset = 0;
+ResM = 0;
+blowout_en = 0;
+average_en = 0;
+#100
+blowout_en = 1;
+average_en = 1;
+
+ResM = 1;
+#CLK_AVALON
+#CLK_AVALON
+ResM = 0;
+#250_000
+
+ResM = 1;
+#CLK_AVALON
+#CLK_AVALON
+ResM = 0;
+#250_000
+
+ResM = 1;
+#CLK_AVALON
+#CLK_AVALON
+ResM = 0;
+#250_000
+
+                          
+$display("Finish testbench");
+$finish;                         
+end                                                    
+
+
+TestHawk #(
+	.SIZEX(FRAME_WIDTH-1),
+	.SIZEY(FRAME_HEIGHT),
+	.DELAY_LVAL(FRAME_IDLE),
+	.DELAY_FVAL(20'h0100)
+	)
+UTestCamLink (
+	.CLK(in_hawk_clk_40_MHz),   
+	.CLKE(in_hawk_clk_40_MHz),	
+	.Reset(fc_reset),
+	.AB_DATA(HAWK_DATA),
+	.LVAL(LVAL_Out),
+	.FVAL(FVAL_Out),
+	.ResM(ResM) 	
+);
+
+hawk_capture #(
+	.SIZEX_HAWK(319),
+	.SIZEY_HAWK(15),
+	.SIZEY_FPGA(10),
+	.START_FIFO_READ(115)
+	)
+hvdcap_inst (
+// avalon slave interface	
+	.slave_clk(in_clk_25_MHz),
+	.slave_rst_n(s_rst_n),
+	.slave_cs(s_cs),
+	.slave_wr_n(s_wr_n),
+	.slave_wrdata(s_wrdata),//[31:0] 
+	.slave_address(s_address),//[1:0]
+	.slave_rddata(),//[31:0]
+// hawk sensor signals
+	.hawk_clk(in_hawk_clk_40_MHz),
+	.hawk_FVAL(FVAL_Out),
+	.hawk_LVAL(LVAL_Out),
+	.hawk_data(HAWK_DATA), 
+// avalon stream interface
+	.stream_enable(1'b1),
+	.stream_clk(in_clk_25_MHz),	//
+	.stream_sop(sink_sop),			//raw_video_stream_sof
+	.stream_valid(sink_valid),		//raw_video_stream_valid
+	.stream_data(sink_data1),			//raw_video_stream_data[15:0]
+	.stream_data1(sink_data2),
+	.stream_eop(sink_eop) 			//raw_video_stream_eof
+	);
+    
+
+// input stream buffer: sink_data1, sink_data2 with sink_clk -> buffer_data[0] with source_clk
+wire [DATA_WIDTH*2-1:0] sink_data;
+wire [DATA_WIDTH-1:0] sink_data_buf;
+wire buffer_valid;
+
+assign sink_data = (sink_valid) ? {sink_data1, sink_data2} : 32'b0;
+assign buffer_valid = sink_valid;
+
+
+fifo_w32r16	stream_buffer (
+	.data (sink_data),
+	.rdclk (in_clk_50_MHz),
+	.rdreq (buffer_valid),
+	.wrclk (in_clk_25_MHz),
+	.wrreq (sink_valid),
+	.q (sink_data_buf)
+	);
+
+	 
+FilterBlowOut #(
+	.DATA_WIDTH(DATA_WIDTH),
+	.FRAME_WIDTH(FRAME_WIDTH),
+	.FRAME_HEIGHT(FRAME_HEIGHT),
+	.THRESHOLD_LOW(THRESHOLD_LOW),
+	.THRESHOLD_HIGH(THRESHOLD_HIGH)
+	)
+tb_blow_out (
+	.en_blow_out(1'b0),
+	.en_bad_replace(1'b0),
+	.en_median(1'b1),
+	.clk(in_clk_50_MHz),
+	//.source_clk(in_clk_50_MHz),
+	.sink_valid(sink_valid),
+	.sink_eop(sink_eop),
+	.sink_sop(sink_sop),
+	.sink_data(sink_data_buf),
+	//.sink_data2(sink_data2),
+	.source_valid(bo_source_valid),
+	.source_eop(bo_source_eop),
+	.source_sop(bo_source_sop),
+	.source_data(bo_sourcce_data)
+	);
+		
+		
+assign sink_bad_data = sink_data1 + 2000*noise_clk;
+		
+FrameAverage_tb #(
+	.DATA_WIDTH(DATA_WIDTH),
+	.FRAME_WIDTH(FRAME_WIDTH),
+	.FRAME_HEIGHT(FRAME_HEIGHT)
+	)
+	tb_average
+	(
+	.en(average_en),
+	.clk(in_clk_50_MHz),
+	.reset(fc_reset),
+	// Avalon-ST Sink interface
+	.sink_valid(sink_valid),
+	.sink_eop(sink_eop),
+	.sink_sop(sink_sop),
+	.sink_data(sink_bad_data),
+	// Avalon-ST Source interface
+	.source_valid(av_source_valid),
+	.source_eop(av_source_eop),
+	.source_sop(av_source_sop),
+	.source_data(av_source_data)
+	);
+		
+endmodule

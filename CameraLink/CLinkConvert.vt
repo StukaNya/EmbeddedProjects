@@ -1,0 +1,109 @@
+// Copyright (C) 1991-2014 Altera Corporation. All rights reserved.
+// Your use of Altera Corporation's design tools, logic functions 
+// and other software and tools, and its AMPP partner logic 
+// functions, and any output files from any of the foregoing 
+// (including device programming or simulation files), and any 
+// associated documentation or information are expressly subject 
+// to the terms and conditions of the Altera Program License 
+// Subscription Agreement, the Altera Quartus II License Agreement,
+// the Altera MegaCore Function License Agreement, or other 
+// applicable license agreement, including, without limitation, 
+// that your use is for the sole purpose of programming logic 
+// devices manufactured by Altera and sold by Altera or its 
+// authorized distributors.  Please refer to the applicable 
+// agreement for further details.
+
+// *****************************************************************************
+// This file contains a Verilog test bench template that is freely editable to  
+// suit user's needs .Comments are provided in each section to help the user    
+// fill out necessary details.                                                  
+// *****************************************************************************
+// Generated on "02/07/2018 13:36:39"
+                                                                                
+// Verilog Test Bench template for design : CLinkConvert
+// 
+// Simulation tool : ModelSim (Verilog)
+// 
+
+`timescale 1 ns/ 1 ps
+module CLinkConvert_vlg_tst();
+// constants                                           
+// general purpose registers
+reg eachvec;
+// test vector input registers
+reg clk_40MHz = 1'b0;
+reg clk_20MHz = 1'b0;
+
+wire clink_in_clk;
+
+wire [15:0] clink_in_data;
+wire clink_in_fval;
+wire clink_in_lval;
+reg en;
+reg rst;
+// wires                                               
+wire [15:0]  clink_out_data;
+wire clink_out_fval;
+wire clink_out_lval;
+
+localparam width = 640;
+localparam height = 512;
+
+always #12.5 
+	clk_40MHz <= ~clk_40MHz;
+always #25 
+	clk_20MHz <= ~clk_20MHz;
+
+CLinkGenerator	#(
+	.DATA_WIDTH(16),
+	.CLK_MHZ(20),
+	.FRAME_WIDTH(height),
+	.LINE_WIDTH(width),
+	.FRAME_DELAY_US(650),
+	.FRAME_PERIOD_US(38000),
+	.LINE_DELAY_NS(100)
+	)
+	CLink_generator
+	(
+	.en(en),
+	.rst(rst),
+	.clk(clk_20MHz),
+	.clink_clk(clink_in_clk),
+	.clink_fval(clink_in_fval),
+	.clink_lval(clink_in_lval),
+	.clink_data(clink_in_data)
+	);
+// assign statements (if any)                          
+CLinkConvert #(
+	.OUT_CLK_MHZ(40),
+	.LINE_WIDTH(width),
+	.LINE_DELAY_US(25)	
+	)
+	CLink_converter
+	(
+// port map - connection between master ports and signals/registers   
+	.clink_in_clk(clink_in_clk),
+	.clink_in_data(clink_in_data),
+	.clink_in_fval(clink_in_fval),
+	.clink_in_lval(clink_in_lval),
+	.clink_out_clk(clk_40MHz),
+	.clink_out_data(clink_out_data),
+	.clink_out_fval(clink_out_fval),
+	.clink_out_lval(clink_out_lval),
+	.en(en),
+	.rst(rst)
+);
+initial                                                
+begin                                                  
+rst = 0;
+en = 1;                                     
+$display("Running testbench");    
+#1000000;
+rst = 1;
+#1000000;
+rst = 0;
+#1000000;                 
+end                                                    
+                                                  
+endmodule
+

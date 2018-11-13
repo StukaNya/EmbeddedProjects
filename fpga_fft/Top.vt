@@ -1,0 +1,50 @@
+`timescale 1 ns/ 1 ps
+module Top_vlg_tst();
+
+reg CE;
+reg CLK, CLKdiv2, CLKdiv4;
+reg Reset;
+wire [511:0] data_o;
+
+Top i1 (
+	.CLK(CLK),
+	.CLKdiv2(CLKdiv2),
+	.CLKdiv4(CLKdiv4),
+	.CE(1'b1),
+	.Reset(Reset),
+	.data_o(data_o)
+);
+
+always #10
+begin
+	CLK <= ~CLK;
+end
+
+always #20
+begin
+	CLKdiv2 <= ~ CLKdiv2;
+end
+
+always #40
+begin
+	CLKdiv4 <= ~CLKdiv4;
+end
+
+initial                                                
+begin                                                  
+
+CLK = 1;   
+CLKdiv4 = 1;  
+CLKdiv2 = 1;                  
+
+Reset = 1;
+#20;
+Reset = 0;                                         
+$display("Running testbench");
+#4000;
+$display("Finish testbench");
+$finish;                          
+end                                                    
+                                            
+endmodule
+
